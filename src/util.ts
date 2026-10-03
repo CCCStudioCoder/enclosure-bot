@@ -2,6 +2,10 @@ import { useState } from "react";
 
 type Coords = [number, number];
 
+function sameCoords(a: Coords, b: Coords) {
+  return a[0] == b[0] && a[1] == b[1];
+}
+
 type Edge = [Coords, Coords];
 
 type Polygon = {
@@ -10,26 +14,54 @@ type Polygon = {
     area?: number;
 };
 
-function useArray<T>(elements: T[]): [T[], (value: T) => void, (index: number) => void] {
+type Move = {
+  from: Coords;
+  to: Coords;
+  cutEdge: number;
+}
+
+type ArrayMeta<T> = {
+  value: T[];
+  add: (value: T) => void;
+  remove: (index: number) => void;
+};
+
+function useArray<T>(elements: T[]): ArrayMeta<T> {
   const [array, setArray] = useState<T[]>(elements);
 
-  return [
-    array,
-    (value: T) => {
+  return {
+    value: array,
+    add: (value: T) => {
       setArray(prev => {
         const newArray = [...prev];
         newArray.push(value);
         return newArray;
       });
     },
-    (index: number) => {
+    remove: (index: number) => {
       setArray(prev => {
         const newArray = [...prev];
-        newArray.splice(index, 1);
+        if(index >= 0) newArray.splice(index, 1);
         return newArray;
       });
     },
-  ];
+  };
+}
+
+export class Alternator<T> {
+  a: ArrayMeta<T>;
+  b: ArrayMeta<T>;
+  base: boolean;
+
+  constructor(a: ArrayMeta<T>, b: ArrayMeta<T>, base: boolean) {
+    this.a = a;
+    this.b = b;
+    this.base = base;
+  }
+
+  get(side?: boolean): ArrayMeta<T> {
+    return (side != undefined ? side : this.base) ? this.a : this.b
+  }
 }
 
 function cross(a: Coords, b: Coords, c: Coords) {
@@ -82,5 +114,5 @@ function buildMask(): number[] {
   return mask;
 }
 
-export {useArray, doesCross, areaOf, buildMask};
-export type { Coords, Edge, Polygon };
+export { sameCoords, useArray, doesCross, areaOf, buildMask };
+export type { Coords, Edge, Polygon, Move };
