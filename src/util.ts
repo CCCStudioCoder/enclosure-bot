@@ -2,6 +2,10 @@ import { useState } from "react";
 
 type Coords = [number, number];
 
+function fromIndex(index: number): Coords {
+  return [index % 19, Math.floor(index / 19)];
+}
+
 function sameCoords(a: Coords, b: Coords) {
   return a[0] == b[0] && a[1] == b[1];
 }
@@ -49,13 +53,13 @@ function useArray<T>(elements: T[]): ArrayMeta<T> {
 }
 
 export class Alternator<T> {
-  a: ArrayMeta<T>;
-  b: ArrayMeta<T>;
-  base: boolean;
+  private a:    ArrayMeta<T>;
+  private b:    ArrayMeta<T>;
+  private base: boolean;
 
   constructor(a: ArrayMeta<T>, b: ArrayMeta<T>, base: boolean) {
-    this.a = a;
-    this.b = b;
+    this.a    = a;
+    this.b    = b;
     this.base = base;
   }
 
@@ -69,16 +73,47 @@ function cross(a: Coords, b: Coords, c: Coords) {
          - (b[1] - a[1]) * (c[0] - a[0]);
 }
 
-function doesCross(one: Edge, two: Edge) {
-  const a = one[0], b = one[1], c = two[0], d = two[1];
+function isOnEdge(
+    point: Coords,
+    start: Coords,
+    end: Coords,
+    crossValue: number
+): boolean {
+    if (crossValue !== 0) return false;
 
+    const dx = end[0] - start[0];
+    const dy = end[1] - start[1];
+
+    return (
+        (point[0] - start[0]) * dx +
+        (point[1] - start[1]) * dy > 0 &&
+        (point[0] - end[0]) * -dx +
+        (point[1] - end[1]) * -dy > 0
+    );
+}
+
+function doesCross([a, b]: Edge, [c, d]: Edge, precise?: boolean): [boolean, boolean] {
   const c1 = cross(a, b, c);
   const c2 = cross(a, b, d);
   const c3 = cross(c, d, a);
   const c4 = cross(c, d, b);
 
-  return ((c1 > 0 && c2 < 0) || (c1 < 0 && c2 > 0)) &&
-        ((c3 > 0 && c4 < 0) || (c3 < 0 && c4 > 0));
+  let onEdge = false;
+
+  if(precise) {
+    const aOnTwo = isOnEdge(a, c, d, c3);
+    const bOnTwo = isOnEdge(b, c, d, c4);
+    const cOnOne = isOnEdge(c, a, b, c1);
+    const dOnOne = isOnEdge(d, a, b, c2);
+
+    onEdge = aOnTwo ||
+      bOnTwo ||
+      cOnOne ||
+      dOnOne;
+  }
+  
+  return [((c1 > 0 && c2 < 0) || (c1 < 0 && c2 > 0)) &&
+            ((c3 > 0 && c4 < 0) || (c3 < 0 && c4 > 0)), onEdge];
 }
 
 function areaOf(polygon: Polygon) {
@@ -114,5 +149,5 @@ function buildMask(): number[] {
   return mask;
 }
 
-export { sameCoords, useArray, doesCross, areaOf, buildMask };
+export { fromIndex, sameCoords, useArray, doesCross, areaOf, buildMask };
 export type { Coords, Edge, Polygon, Move };
