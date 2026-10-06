@@ -1,1 +1,8 @@
-@import "tailwindcss"
+@import "tailwindcss";
+
+.point:hover::after {
+    content: attr(data-pos);
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+}

@@ -10,17 +10,28 @@ import {
   Alternator,
   fromIndex,
   doesCross,
+  areaOf,
+  findCyclesClosedByEdge,
 } from "./util";
+
+const aroundMask: Coords[] = buildMask();
 
 export default function App() {
 
   const gameRef = useRef<HTMLCanvasElement | null>(null);
-  let aroundMask: number[] = [];
 
   const [turn, setTurn] = useState(true);
-  const [selectedNode, setSelectedNode] = useState<Coords | null>(null);
+  const [selectedNode, setSelectedNode] = useState<Coords|null>(null);
+  const [movesRemaining, setMovesRemaining] = useState(1);
+  const [invincibleEdges, setInvincibleEdges] = useState<Edge[]>([]);
+  const [edgesThisTurn, setEdgesThisTurn] = useState<Edge[]>([]);
   const [availableMoves, setAvailableMoves] = useState<number[]>([]); // indexes
   const [legalMoves, setLegalMoves] = useState<Move[]>([]); // move meta
+  const [blueScore, setBlueScore] = useState(0);
+  const [redScore, setRedScore] = useState(0);
+  const [bluePlaced, setBluePlaced] = useState(0);
+  const [redPlaced, setRedPlaced] = useState(0);
+  const [gameResult, setGameResult] = useState<string | null>(null);
 
   const blueNodes = useArray<Coords>([
     [0, 9],
@@ -54,10 +65,6 @@ export default function App() {
   const polygonAlternator = new Alternator(bluePolygons, redPolygons, turn);
 
   useEffect(() => {
-    aroundMask = buildMask();
-  }, []);
-
-  useEffect(() => {
     if (!gameRef.current) return;
     const canvas = gameRef.current.getContext("2d")!;
     canvas.clearRect(0, 0, 800, 800);
@@ -73,8 +80,8 @@ export default function App() {
 
       const edges = edgeAlternator.get(side).value;
 
-      for (const [i, edge] of edges.entries()) {
-        canvas.lineWidth = i === edges.length - 1 ? 10 : 5;
+      for (const edge of edges) {
+        canvas.lineWidth = invincibleEdges.some((protectedEdge) => sameEdge(protectedEdge, edge)) ? 10 : 5;
         canvas.beginPath();
         canvas.moveTo(edge[0][0] * 40 + 5, edge[0][1] * 40 + 5);
         canvas.lineTo(edge[1][0] * 40 + 5, edge[1][1] * 40 + 5);
@@ -99,11 +106,16 @@ export default function App() {
         canvas.closePath();
       }
     }
-  }, [gameRef, blueEdges, redEdges, bluePolygons, redPolygons]);
+  }, [gameRef, blueEdges, redEdges, bluePolygons, redPolygons, invincibleEdges]);
 
   return (
     <main className="App flex flex-col items-center">
       <h1 className="text-3xl">Enclosure bot</h1>
+      <section className="mb-3 flex gap-6 text-lg" aria-live="polite">
+        <span className="text-blue-700">Blue: {blueScore.toFixed(2)} points ({bluePlaced}/120 edges)</span>
+        <span className="text-red-700">Red: {redScore.toFixed(2)} points ({redPlaced}/120 edges)</span>
+        {gameResult && <strong>{gameResult}</strong>}
+      </section>
       <div className="relative flex items-center">
         <canvas
           width={800}
@@ -131,18 +143,25 @@ export default function App() {
           const isAvailableNode =
             (turn && blueNode != undefined) || (!turn && redNode != undefined);
 
+          const size = sameCoords(selectedNode, coords) ? 32 : 12;
+          const translate = -Math.max(0, size - 20);
+
           return (
             <div
               key={i}
-              className={`absolute inline-block h-3 w-3 rounded-full ${color}`}
+              className={`absolute inline-block rounded-full point ${color}`}
               style={{
+                height: size,
+                width: size,
+                translate: `${translate}px ${translate}px`,
                 left: coords[0] * 40,
                 top: coords[1] * 40,
                 cursor: (availableMoves.length != 0 ? isMove : isAvailableNode)
                   ? "pointer"
                   : "initial",
               }}
-              onClick={() => handleClick(i, coords, isMove, isAvailableNode)}
+              onClick={() => handleClick(coords, isMove, isAvailableNode)}
+              data-pos={coords}
             />
           );
         })}
@@ -150,83 +169,193 @@ export default function App() {
     </main>
   );
 
-  function isLonelyNode(coords: Coords) {
-    const nodes = nodeAlternator.get(!turn).value;
-    return nodes.filter((node) => sameCoords(node, coords)).length == 1;
-  }
-
   function handleClick(
-    originIndex: number,
     coords: Coords,
     isMove: boolean,
     isAvailableNode: boolean,
   ) {
+    if (gameResult) return;
     if (!isMove && !isAvailableNode) return;
 
     if (isMove) {
       const move = legalMoves.find((move) => sameCoords(move.to, coords))!;
 
-      edgeAlternator.get().add([move.from, move.to]);
-
-      if(move.cutEdge != -1) {
-        edgeAlternator.get(!turn).remove(move.cutEdge);
-
-        const cutEdge = edgeAlternator.get(!turn).value[move.cutEdge];
-
-        const remove = (node: Coords) => {
-          const nodes = nodeAlternator.get(!turn);
-          nodes.remove(nodes.value.indexOf(node));
-        };
-
-        if (isLonelyNode(cutEdge[0])) remove(cutEdge[0]);
-        if (isLonelyNode(cutEdge[1])) remove(cutEdge[1]);
+      const placedEdge: Edge = [move.from, move.to];
+      const ownEdges = edgeAlternator.get();
+      const newPolygons = findCyclesClosedByEdge(ownEdges.value, placedEdge);
+      ownEdges.add(placedEdge);
+      const ownedPolygons = polygonAlternator.get();
+      const existingKeys = new Set(ownedPolygons.value.map((polygon) => polygon.nodes.map(([x, y]) => `${x},${y}`).sort().join(";")));
+      const acceptedPolygons: Polygon[] = [];
+      for (const polygon of newPolygons) {
+        const key = polygon.nodes.map(([x, y]) => `${x},${y}`).sort().join(";");
+        if (!existingKeys.has(key)) {
+          existingKeys.add(key);
+          acceptedPolygons.push(polygon);
+          ownedPolygons.add(polygon);
+        }
+      }
+      const nextEdgesThisTurn = [...edgesThisTurn, placedEdge];
+      
+      const ownNodes = nodeAlternator.get();
+      if (!ownNodes.value.some((node) => sameCoords(node, move.to))) {
+        ownNodes.add(move.to);
       }
 
-      setTurn(!turn);
+      if (move.cutEdge !== -1) {
+        const opponentEdges = edgeAlternator.get(!turn);
+        const cutEdge = opponentEdges.value[move.cutEdge];
+        opponentEdges.remove(move.cutEdge);
+
+        // A captured shape only remains enclosed while all of its edges do.
+        const opponentPolygons = polygonAlternator.get(!turn);
+        const brokenPolygonIndexes = opponentPolygons.value
+          .map((polygon, index) => polygon.edges.some((edge) => sameEdge(edge, cutEdge)) ? index : -1)
+          .filter((index) => index !== -1);
+        for (const index of brokenPolygonIndexes.reverse()) opponentPolygons.remove(index);
+
+        const opponentNodes = nodeAlternator.get(!turn);
+        for (const endpoint of cutEdge) {
+          const stillConnected = opponentEdges.value.some((edge) =>
+            sameCoords(edge[0], endpoint) || sameCoords(edge[1], endpoint),
+          );
+          if (!stillConnected) {
+            const nodeIndex = opponentNodes.value.findIndex((node) =>
+              sameCoords(node, endpoint),
+            );
+            if (nodeIndex !== -1) opponentNodes.remove(nodeIndex);
+          }
+        }
+      }
+
+      const cutEdge = move.cutEdge === -1 ? undefined : edgeAlternator.get(!turn).value[move.cutEdge];
+      const survivingBluePolygons = turn ? bluePolygons.value : bluePolygons.value.filter((polygon) => !cutEdge || !polygon.edges.some((edge) => sameEdge(edge, cutEdge)));
+      const survivingRedPolygons = turn ? redPolygons.value.filter((polygon) => !cutEdge || !polygon.edges.some((edge) => sameEdge(edge, cutEdge))) : redPolygons.value;
+      const bluePolygonsNow = turn ? [...survivingBluePolygons, ...acceptedPolygons] : survivingBluePolygons;
+      const redPolygonsNow = turn ? survivingRedPolygons : [...survivingRedPolygons, ...acceptedPolygons];
+      const nextBlueScore = blueScore + bluePolygonsNow.reduce((sum, polygon) => sum + areaOf(polygon), 0);
+      const nextRedScore = redScore + redPolygonsNow.reduce((sum, polygon) => sum + areaOf(polygon), 0);
+      const nextBluePlaced = bluePlaced + (turn ? 1 : 0);
+      const nextRedPlaced = redPlaced + (turn ? 0 : 1);
+      setBlueScore(nextBlueScore);
+      setRedScore(nextRedScore);
+      setBluePlaced(nextBluePlaced);
+      setRedPlaced(nextRedPlaced);
+      if (nextBluePlaced >= 120 && nextRedPlaced >= 120) {
+        setGameResult(nextBlueScore === nextRedScore ? "Draw" : nextBlueScore > nextRedScore ? "Blue wins" : "Red wins");
+      }
+
+      setSelectedNode(null);
+      setAvailableMoves([]);
+      setLegalMoves([]);
+      if (movesRemaining > 1) {
+        setEdgesThisTurn(nextEdgesThisTurn);
+        setMovesRemaining(movesRemaining - 1);
+      } else {
+        setInvincibleEdges(nextEdgesThisTurn.slice(-2));
+        setEdgesThisTurn([]);
+        setTurn(!turn);
+        setMovesRemaining(2);
+      }
       return;
     }
 
-    // so it's a node
-    const availableMoveIndexes: number[] = [];
-    const availableMoves: Move[] = [];
+    if(isAvailableNode) {
+      const availableMoveIndexes: number[] = [];
+      const availableMoves: Move[] = [];
 
-    for(let i = 0; i < aroundMask.length; i++) {
-      const index = originIndex + aroundMask[i];
-      const move = legalMove(fromIndex(index));
-      if(move != "illegal") {
-        availableMoveIndexes.push(index);
-        availableMoves.push(move);
+      for (const [xOffset, yOffset] of aroundMask) {
+        const target: Coords = [coords[0] + xOffset, coords[1] + yOffset];
+        if (target[0] < 0 || target[0] >= 19 || target[1] < 0 || target[1] >= 19) continue;
+        const index = target[1] * 19 + target[0];
+        const move = legalMove(coords, target);
+        if(move != "illegal") {
+          availableMoveIndexes.push(index);
+          availableMoves.push(move);
+        }
       }
+
+      setSelectedNode(coords);
+      setAvailableMoves(availableMoveIndexes);
+      setLegalMoves(availableMoves);
+
+      return;
     }
 
-    setSelectedNode(coords);
-    setAvailableMoves(availableMoveIndexes);
-    setLegalMoves(availableMoves);
+    setSelectedNode(null);
+    
   }
 
-  function legalMove(to: Coords): Move|"illegal" {
-    const newEdge: Edge = [selectedNode!, to];
-    let cutEdge = -1;
-
-    const oppCutEdges = edgeAlternator.get(!turn).value.filter((edge, i) => {
-      if(doesCross(newEdge, edge)[0]) {
-        cutEdge = i;
-        return true
-      }
-      return false;
-    });
-
-    const illegalSelfCutEdges = edgeAlternator.get().value.find((edge) => doesCross(edge, newEdge, true)[1]);
-
-    if(oppCutEdges.length > 1 || illegalSelfCutEdges) {
+  function legalMove(from: Coords, to: Coords): Move|"illegal" {
+    if (sameCoords(from, to)) {
+      console.log("Same coords");
       return "illegal";
     }
-    
-    return {
-      from: selectedNode!,
+    const newEdge: Edge = [from, to];
+    let cutEdge = -1;
+
+    const opponentEdges = edgeAlternator.get(!turn).value;
+    const crossedOpponentEdges = opponentEdges
+      .map((edge, index) => ({ edge, index }))
+      .filter(({ edge }) => segmentsTouch(newEdge, edge));
+    const crossesInvincibleEdge = crossedOpponentEdges.some(({ edge }) =>
+      invincibleEdges.some((protectedEdge) => sameEdge(protectedEdge, edge)),
+    );
+    const cuttableEdges = crossedOpponentEdges.filter(({ edge }) =>
+      !invincibleEdges.some((protectedEdge) => sameEdge(protectedEdge, edge)),
+    );
+    if (cuttableEdges.length === 1) cutEdge = cuttableEdges[0].index;
+
+    const destinationOnOwnEdge = edgeAlternator.get().value.some(([start, end]) =>
+      pointOnSegmentInterior(to, start, end),
+    );
+
+    if (crossesInvincibleEdge || crossedOpponentEdges.length > 1 || destinationOnOwnEdge) {
+      console.log(`${to} rejected. Crosses invincible edge: ${crossesInvincibleEdge}. Crosses multiple opponent edges: ${crossedOpponentEdges.length > 1}. Destination on own edge: ${destinationOnOwnEdge}`);
+      return "illegal";
+    }
+
+    const move = {
+      from: from,
       to: to,
       cutEdge: cutEdge
     };
+
+    console.log(`Accepted move ${from} -> ${to}`)
+    return move;
+  }
+
+  function pointOnSegmentInterior(point: Coords, start: Coords, end: Coords) {
+    const cross = (end[0] - start[0]) * (point[1] - start[1]) -
+      (end[1] - start[1]) * (point[0] - start[0]);
+    if (cross !== 0) return false;
+
+    const dot = (point[0] - start[0]) * (point[0] - end[0]) +
+      (point[1] - start[1]) * (point[1] - end[1]);
+    return dot < 0;
+  }
+
+  function sameEdge(a: Edge, b: Edge) {
+    return (sameCoords(a[0], b[0]) && sameCoords(a[1], b[1])) ||
+      (sameCoords(a[0], b[1]) && sameCoords(a[1], b[0]));
+  }
+
+  function segmentsTouch([a, b]: Edge, [c, d]: Edge) {
+    if (doesCross([a, b], [c, d])[0]) return true;
+    return pointOnSegmentInclusive(a, c, d) ||
+      pointOnSegmentInclusive(b, c, d) ||
+      pointOnSegmentInclusive(c, a, b) ||
+      pointOnSegmentInclusive(d, a, b);
+  }
+
+  function pointOnSegmentInclusive(point: Coords, start: Coords, end: Coords) {
+    const cross = (end[0] - start[0]) * (point[1] - start[1]) -
+      (end[1] - start[1]) * (point[0] - start[0]);
+    return cross === 0 &&
+      point[0] >= Math.min(start[0], end[0]) &&
+      point[0] <= Math.max(start[0], end[0]) &&
+      point[1] >= Math.min(start[1], end[1]) &&
+      point[1] <= Math.max(start[1], end[1]);
   }
 
 }
