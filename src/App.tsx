@@ -144,25 +144,23 @@ export default function App() {
             (turn && blueNode != undefined) || (!turn && redNode != undefined);
 
           const size = sameCoords(selectedNode, coords) ? 32 : 12;
-          const translate = -Math.max(0, size - 20);
-
           return (
-            <div
-              key={i}
-              className={`absolute inline-block rounded-full point ${color}`}
-              style={{
-                height: size,
-                width: size,
-                translate: `${translate}px ${translate}px`,
-                left: coords[0] * 40,
-                top: coords[1] * 40,
-                cursor: (availableMoves.length != 0 ? isMove : isAvailableNode)
-                  ? "pointer"
-                  : "initial",
-              }}
-              onClick={() => handleClick(coords, isMove, isAvailableNode)}
-              data-pos={coords}
-            />
+            <div className="absolute flex justify-center items-center h-8 w-8 point" style={{
+              left: coords[0] * 40 + 5 - 16,
+              top: coords[1] * 40 + 5 - 16,
+              cursor: (availableMoves.length != 0 ? isMove : isAvailableNode)
+                ? "pointer"
+                : "initial",
+            }} onClick={() => handleClick(coords, isMove, isAvailableNode)} data-pos={coords}>
+              <div
+                key={i}
+                className={`absolute inline-block rounded-full ${color}`}
+                style={{
+                  height: size,
+                  width: size,
+                }}
+              />
+            </div>
           );
         })}
       </div>
