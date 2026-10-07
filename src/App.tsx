@@ -9,10 +9,11 @@ import {
   sameCoords,
   Alternator,
   fromIndex,
-  doesCross,
   areaOf,
   findCyclesClosedByEdge,
+  sameEdge,
 } from "./util";
+import { legalMove } from "./game";
 
 const aroundMask: Coords[] = buildMask();
 
@@ -43,6 +44,7 @@ export default function App() {
   ]);
 
   const nodeAlternator = new Alternator(blueNodes, redNodes, turn);
+  const nodePureAlternator = new Alternator(blueNodes.value, redNodes.value, turn);
 
   const blueEdges = useArray<Edge>([
     [
@@ -58,11 +60,13 @@ export default function App() {
   ]);
 
   const edgeAlternator = new Alternator(blueEdges, redEdges, turn);
+  const edgePureAlternator = new Alternator(blueEdges.value, redEdges.value, turn);
 
   const bluePolygons = useArray<Polygon>([]);
   const redPolygons = useArray<Polygon>([]);
 
   const polygonAlternator = new Alternator(bluePolygons, redPolygons, turn);
+  const polygonPureAlternator = new Alternator(bluePolygons.value, redPolygons.value, turn);
 
   useEffect(() => {
     if (!gameRef.current) return;
@@ -266,7 +270,7 @@ export default function App() {
         const target: Coords = [coords[0] + xOffset, coords[1] + yOffset];
         if (target[0] < 0 || target[0] >= 19 || target[1] < 0 || target[1] >= 19) continue;
         const index = target[1] * 19 + target[0];
-        const move = legalMove(coords, target);
+        const move = legalMove(edgePureAlternator, turn, invincibleEdges, coords, target);
         if(move != "illegal") {
           availableMoveIndexes.push(index);
           availableMoves.push(move);
@@ -282,78 +286,6 @@ export default function App() {
 
     setSelectedNode(null);
     
-  }
-
-  function legalMove(from: Coords, to: Coords): Move|"illegal" {
-    if (sameCoords(from, to)) {
-      console.log("Same coords");
-      return "illegal";
-    }
-    const newEdge: Edge = [from, to];
-    let cutEdge = -1;
-
-    const opponentEdges = edgeAlternator.get(!turn).value;
-    const crossedOpponentEdges = opponentEdges
-      .map((edge, index) => ({ edge, index }))
-      .filter(({ edge }) => segmentsTouch(newEdge, edge));
-    const crossesInvincibleEdge = crossedOpponentEdges.some(({ edge }) =>
-      invincibleEdges.some((protectedEdge) => sameEdge(protectedEdge, edge)),
-    );
-    const cuttableEdges = crossedOpponentEdges.filter(({ edge }) =>
-      !invincibleEdges.some((protectedEdge) => sameEdge(protectedEdge, edge)),
-    );
-    if (cuttableEdges.length === 1) cutEdge = cuttableEdges[0].index;
-
-    const destinationOnOwnEdge = edgeAlternator.get().value.some(([start, end]) =>
-      pointOnSegmentInterior(to, start, end),
-    );
-
-    if (crossesInvincibleEdge || crossedOpponentEdges.length > 1 || destinationOnOwnEdge) {
-      console.log(`${to} rejected. Crosses invincible edge: ${crossesInvincibleEdge}. Crosses multiple opponent edges: ${crossedOpponentEdges.length > 1}. Destination on own edge: ${destinationOnOwnEdge}`);
-      return "illegal";
-    }
-
-    const move = {
-      from: from,
-      to: to,
-      cutEdge: cutEdge
-    };
-
-    console.log(`Accepted move ${from} -> ${to}`)
-    return move;
-  }
-
-  function pointOnSegmentInterior(point: Coords, start: Coords, end: Coords) {
-    const cross = (end[0] - start[0]) * (point[1] - start[1]) -
-      (end[1] - start[1]) * (point[0] - start[0]);
-    if (cross !== 0) return false;
-
-    const dot = (point[0] - start[0]) * (point[0] - end[0]) +
-      (point[1] - start[1]) * (point[1] - end[1]);
-    return dot < 0;
-  }
-
-  function sameEdge(a: Edge, b: Edge) {
-    return (sameCoords(a[0], b[0]) && sameCoords(a[1], b[1])) ||
-      (sameCoords(a[0], b[1]) && sameCoords(a[1], b[0]));
-  }
-
-  function segmentsTouch([a, b]: Edge, [c, d]: Edge) {
-    if (doesCross([a, b], [c, d])[0]) return true;
-    return pointOnSegmentInclusive(a, c, d) ||
-      pointOnSegmentInclusive(b, c, d) ||
-      pointOnSegmentInclusive(c, a, b) ||
-      pointOnSegmentInclusive(d, a, b);
-  }
-
-  function pointOnSegmentInclusive(point: Coords, start: Coords, end: Coords) {
-    const cross = (end[0] - start[0]) * (point[1] - start[1]) -
-      (end[1] - start[1]) * (point[0] - start[0]);
-    return cross === 0 &&
-      point[0] >= Math.min(start[0], end[0]) &&
-      point[0] <= Math.max(start[0], end[0]) &&
-      point[1] >= Math.min(start[1], end[1]) &&
-      point[1] <= Math.max(start[1], end[1]);
   }
 
 }

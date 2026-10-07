@@ -13,6 +13,11 @@ function sameCoords(a: Coords|null, b: Coords) {
 
 type Edge = [Coords, Coords];
 
+function sameEdge(a: Edge, b: Edge) {
+  return (sameCoords(a[0], b[0]) && sameCoords(a[1], b[1])) ||
+    (sameCoords(a[0], b[1]) && sameCoords(a[1], b[0]));
+}
+
 type Polygon = {
     nodes: Coords[];
     edges: Edge[];
@@ -54,17 +59,17 @@ function useArray<T>(elements: T[]): ArrayMeta<T> {
 }
 
 export class Alternator<T> {
-  private a:    ArrayMeta<T>;
-  private b:    ArrayMeta<T>;
+  private a:    T;
+  private b:    T;
   private base: boolean;
 
-  constructor(a: ArrayMeta<T>, b: ArrayMeta<T>, base: boolean) {
+  constructor(a: T, b: T, base: boolean) {
     this.a    = a;
     this.b    = b;
     this.base = base;
   }
 
-  get(side?: boolean): ArrayMeta<T> {
+  get(side?: boolean): T {
     return (side != undefined ? side : this.base) ? this.a : this.b
   }
 }
@@ -135,6 +140,35 @@ function areaOf(polygon: Polygon) {
   return area;
 }
 
+function pointOnSegmentInclusive(point: Coords, start: Coords, end: Coords) {
+  const cross = (end[0] - start[0]) * (point[1] - start[1]) -
+    (end[1] - start[1]) * (point[0] - start[0]);
+  return cross === 0 &&
+    point[0] >= Math.min(start[0], end[0]) &&
+    point[0] <= Math.max(start[0], end[0]) &&
+    point[1] >= Math.min(start[1], end[1]) &&
+    point[1] <= Math.max(start[1], end[1]);
+}
+
+function pointOnSegmentInterior(point: Coords, start: Coords, end: Coords) {
+  const cross = (end[0] - start[0]) * (point[1] - start[1]) -
+    (end[1] - start[1]) * (point[0] - start[0]);
+  if (cross !== 0) return false;
+
+  const dot = (point[0] - start[0]) * (point[0] - end[0]) +
+    (point[1] - start[1]) * (point[1] - end[1]);
+    
+  return dot < 0;
+}
+
+function segmentsTouch([a, b]: Edge, [c, d]: Edge) {
+  if (doesCross([a, b], [c, d])[0]) return true;
+  return pointOnSegmentInclusive(a, c, d) ||
+    pointOnSegmentInclusive(b, c, d) ||
+    pointOnSegmentInclusive(c, a, b) ||
+    pointOnSegmentInclusive(d, a, b);
+}
+
 function findCyclesClosedByEdge(edges: Edge[], closingEdge: Edge): Polygon[] {
   const [start, end] = closingEdge;
   const adjacency = new Map<string, Coords[]>();
@@ -195,5 +229,6 @@ function buildMask(): Coords[] {
   return mask;
 }
 
-export { fromIndex, sameCoords, useArray, doesCross, areaOf, buildMask, findCyclesClosedByEdge };
+export { fromIndex, sameCoords, sameEdge, useArray, doesCross, areaOf, 
+  pointOnSegmentInclusive, pointOnSegmentInterior, segmentsTouch, findCyclesClosedByEdge, buildMask };
 export type { Coords, Edge, Polygon, Move };
