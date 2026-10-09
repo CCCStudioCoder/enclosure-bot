@@ -117,7 +117,7 @@ export default function App() {
         canvas.closePath();
       }
     }
-  }, [gameRef, blueEdges, redEdges, bluePolygons, redPolygons, invincibleEdges]);
+  }, [gameRef, blueEdges, redEdges, bluePolygons, redPolygons, invincibleEdges, edgesThisTurn]);
 
   return (
     <main className="App flex flex-col items-center">
@@ -162,9 +162,8 @@ export default function App() {
               cursor: (availableMoves.length != 0 ? isMove : isAvailableNode)
                 ? "pointer"
                 : "initial",
-            }} onClick={() => handleClick(coords, isMove, isAvailableNode)} data-pos={coords}>
+            }} onClick={() => handleClick(coords, isMove, isAvailableNode)} data-pos={coords} key={i}>
               <div
-                key={i}
                 className={`absolute inline-block rounded-full ${color}`}
                 style={{
                   height: size,
@@ -230,6 +229,8 @@ export default function App() {
     setRedEdges(clone.edgeAlternator.get(false));
     setBluePolygons(clone.polygonAlternator.get(true));
     setRedPolygons(clone.polygonAlternator.get(false));
+    console.log(bluePolygons);
+    console.log(redPolygons);
     setLegalMoves(clone.legalMoves);
   }
 

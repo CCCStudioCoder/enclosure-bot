@@ -56,7 +56,6 @@ function legalMove(
     );
 
     if (crossesInvincibleEdge || crossedOpponentEdges.length > 1 || destinationOnOwnEdge) {
-        console.log(`${to} rejected. Crosses invincible edge: ${crossesInvincibleEdge}. Crosses multiple opponent edges: ${crossedOpponentEdges.length > 1}. Destination on own edge: ${destinationOnOwnEdge}`);
         return "illegal";
     }
 
@@ -66,7 +65,6 @@ function legalMove(
         cutEdge: cutEdge
     };
 
-    console.log(`Accepted move ${from} -> ${to}`)
     return move;
 }
 
