@@ -1,21 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import {
   type Polygon,
-  useArray,
   type Coords,
   type Edge,
-  buildMask,
+  type GameClone,
   type Move,
   sameCoords,
   Alternator,
   fromIndex,
-  areaOf,
-  findCyclesClosedByEdge,
   sameEdge,
 } from "./util";
-import { legalMove } from "./game";
-
-const aroundMask: Coords[] = buildMask();
+import { availableMove, applyMove } from "./game";
 
 export default function App() {
 
@@ -34,25 +29,24 @@ export default function App() {
   const [redPlaced, setRedPlaced] = useState(0);
   const [gameResult, setGameResult] = useState<string | null>(null);
 
-  const blueNodes = useArray<Coords>([
+  const [blueNodes, setBlueNodes] = useState<Coords[]>([
     [0, 9],
     [3, 9],
   ]);
-  const redNodes = useArray<Coords>([
+  const [redNodes, setRedNodes] = useState<Coords[]>([
     [15, 9],
     [18, 9],
   ]);
 
   const nodeAlternator = new Alternator(blueNodes, redNodes, turn);
-  const nodePureAlternator = new Alternator(blueNodes.value, redNodes.value, turn);
 
-  const blueEdges = useArray<Edge>([
+  const [blueEdges, setBlueEdges] = useState<Edge[]>([
     [
       [0, 9],
       [3, 9],
     ],
   ]);
-  const redEdges = useArray<Edge>([
+  const [redEdges, setRedEdges] = useState<Edge[]>([
     [
       [15, 9],
       [18, 9],
@@ -60,13 +54,26 @@ export default function App() {
   ]);
 
   const edgeAlternator = new Alternator(blueEdges, redEdges, turn);
-  const edgePureAlternator = new Alternator(blueEdges.value, redEdges.value, turn);
 
-  const bluePolygons = useArray<Polygon>([]);
-  const redPolygons = useArray<Polygon>([]);
+  const [bluePolygons, setBluePolygons] = useState<Polygon[]>([]);
+  const [redPolygons, setRedPolygons] = useState<Polygon[]>([]);
 
   const polygonAlternator = new Alternator(bluePolygons, redPolygons, turn);
-  const polygonPureAlternator = new Alternator(bluePolygons.value, redPolygons.value, turn);
+
+  const clone: GameClone = {
+    turn: turn,
+    moveRemaining: movesRemaining,
+    invincibleEdges: invincibleEdges,
+    edgesThisTurn: edgesThisTurn,
+    blueScore: blueScore,
+    redScore: redScore,
+    bluePlaced: bluePlaced,
+    redPlaced: redPlaced,
+    nodeAlternator: nodeAlternator,
+    edgeAlternator: edgeAlternator,
+    polygonAlternator: polygonAlternator,
+    legalMoves: legalMoves
+  };
 
   useEffect(() => {
     if (!gameRef.current) return;
@@ -82,7 +89,7 @@ export default function App() {
         ? "rgba(50, 50, 255, 0.6)"
         : "rgba(255, 50, 50, 0.6)";
 
-      const edges = edgeAlternator.get(side).value;
+      const edges = edgeAlternator.get(side);
 
       for (const edge of edges) {
         canvas.lineWidth = invincibleEdges.some((protectedEdge) => sameEdge(protectedEdge, edge)) ? 10 : 5;
@@ -93,7 +100,7 @@ export default function App() {
         canvas.closePath();
       }
 
-      for (const polygon of polygonAlternator.get(side).value) {
+      for (const polygon of polygonAlternator.get(side)) {
         canvas.beginPath();
 
         const points = polygon.nodes.length;
@@ -130,10 +137,10 @@ export default function App() {
         {Array.from({ length: 361 }).map((_, i) => {
           const coords: Coords = fromIndex(i);
 
-          const blueNode = blueNodes.value.find((node) =>
+          const blueNode = blueNodes.find((node) =>
             sameCoords(node, coords),
           );
-          const redNode = redNodes.value.find((node) =>
+          const redNode = redNodes.find((node) =>
             sameCoords(node, coords),
           );
 
@@ -180,112 +187,50 @@ export default function App() {
     if (!isMove && !isAvailableNode) return;
 
     if (isMove) {
-      const move = legalMoves.find((move) => sameCoords(move.to, coords))!;
+      const newClone = applyMove(clone, coords);
 
-      const placedEdge: Edge = [move.from, move.to];
-      const ownEdges = edgeAlternator.get();
-      const newPolygons = findCyclesClosedByEdge(ownEdges.value, placedEdge);
-      ownEdges.add(placedEdge);
-      const ownedPolygons = polygonAlternator.get();
-      const existingKeys = new Set(ownedPolygons.value.map((polygon) => polygon.nodes.map(([x, y]) => `${x},${y}`).sort().join(";")));
-      const acceptedPolygons: Polygon[] = [];
-      for (const polygon of newPolygons) {
-        const key = polygon.nodes.map(([x, y]) => `${x},${y}`).sort().join(";");
-        if (!existingKeys.has(key)) {
-          existingKeys.add(key);
-          acceptedPolygons.push(polygon);
-          ownedPolygons.add(polygon);
-        }
-      }
-      const nextEdgesThisTurn = [...edgesThisTurn, placedEdge];
-      
-      const ownNodes = nodeAlternator.get();
-      if (!ownNodes.value.some((node) => sameCoords(node, move.to))) {
-        ownNodes.add(move.to);
+      if (newClone.bluePlaced >= 120 && newClone.redPlaced >= 120) {
+        setGameResult(newClone.blueScore === newClone.redScore ? "Draw" : newClone.blueScore > newClone.redScore ? "Blue wins" : "Red wins");
       }
 
-      if (move.cutEdge !== -1) {
-        const opponentEdges = edgeAlternator.get(!turn);
-        const cutEdge = opponentEdges.value[move.cutEdge];
-        opponentEdges.remove(move.cutEdge);
-
-        // A captured shape only remains enclosed while all of its edges do.
-        const opponentPolygons = polygonAlternator.get(!turn);
-        const brokenPolygonIndexes = opponentPolygons.value
-          .map((polygon, index) => polygon.edges.some((edge) => sameEdge(edge, cutEdge)) ? index : -1)
-          .filter((index) => index !== -1);
-        for (const index of brokenPolygonIndexes.reverse()) opponentPolygons.remove(index);
-
-        const opponentNodes = nodeAlternator.get(!turn);
-        for (const endpoint of cutEdge) {
-          const stillConnected = opponentEdges.value.some((edge) =>
-            sameCoords(edge[0], endpoint) || sameCoords(edge[1], endpoint),
-          );
-          if (!stillConnected) {
-            const nodeIndex = opponentNodes.value.findIndex((node) =>
-              sameCoords(node, endpoint),
-            );
-            if (nodeIndex !== -1) opponentNodes.remove(nodeIndex);
-          }
-        }
-      }
-
-      const cutEdge = move.cutEdge === -1 ? undefined : edgeAlternator.get(!turn).value[move.cutEdge];
-      const survivingBluePolygons = turn ? bluePolygons.value : bluePolygons.value.filter((polygon) => !cutEdge || !polygon.edges.some((edge) => sameEdge(edge, cutEdge)));
-      const survivingRedPolygons = turn ? redPolygons.value.filter((polygon) => !cutEdge || !polygon.edges.some((edge) => sameEdge(edge, cutEdge))) : redPolygons.value;
-      const bluePolygonsNow = turn ? [...survivingBluePolygons, ...acceptedPolygons] : survivingBluePolygons;
-      const redPolygonsNow = turn ? survivingRedPolygons : [...survivingRedPolygons, ...acceptedPolygons];
-      const nextBlueScore = blueScore + bluePolygonsNow.reduce((sum, polygon) => sum + areaOf(polygon), 0);
-      const nextRedScore = redScore + redPolygonsNow.reduce((sum, polygon) => sum + areaOf(polygon), 0);
-      const nextBluePlaced = bluePlaced + (turn ? 1 : 0);
-      const nextRedPlaced = redPlaced + (turn ? 0 : 1);
-      setBlueScore(nextBlueScore);
-      setRedScore(nextRedScore);
-      setBluePlaced(nextBluePlaced);
-      setRedPlaced(nextRedPlaced);
-      if (nextBluePlaced >= 120 && nextRedPlaced >= 120) {
-        setGameResult(nextBlueScore === nextRedScore ? "Draw" : nextBlueScore > nextRedScore ? "Blue wins" : "Red wins");
-      }
-
+      applyGameClone(newClone);
       setSelectedNode(null);
       setAvailableMoves([]);
       setLegalMoves([]);
-      if (movesRemaining > 1) {
-        setEdgesThisTurn(nextEdgesThisTurn);
-        setMovesRemaining(movesRemaining - 1);
-      } else {
-        setInvincibleEdges(nextEdgesThisTurn.slice(-2));
-        setEdgesThisTurn([]);
-        setTurn(!turn);
-        setMovesRemaining(2);
-      }
+      
       return;
     }
 
     if(isAvailableNode) {
-      const availableMoveIndexes: number[] = [];
-      const availableMoves: Move[] = [];
-
-      for (const [xOffset, yOffset] of aroundMask) {
-        const target: Coords = [coords[0] + xOffset, coords[1] + yOffset];
-        if (target[0] < 0 || target[0] >= 19 || target[1] < 0 || target[1] >= 19) continue;
-        const index = target[1] * 19 + target[0];
-        const move = legalMove(edgePureAlternator, turn, invincibleEdges, coords, target);
-        if(move != "illegal") {
-          availableMoveIndexes.push(index);
-          availableMoves.push(move);
-        }
-      }
+      const availableMoves = availableMove(clone, coords);
 
       setSelectedNode(coords);
-      setAvailableMoves(availableMoveIndexes);
-      setLegalMoves(availableMoves);
+      setAvailableMoves(availableMoves[0]);
+      setLegalMoves(availableMoves[1]);
 
       return;
     }
 
     setSelectedNode(null);
     
+  }
+
+  function applyGameClone(clone: GameClone) {
+    setTurn(clone.turn);
+    setMovesRemaining(clone.moveRemaining);
+    setInvincibleEdges(clone.invincibleEdges);
+    setEdgesThisTurn(clone.edgesThisTurn)
+    setBlueScore(clone.blueScore);
+    setRedScore(clone.redScore);
+    setBluePlaced(clone.bluePlaced);
+    setRedPlaced(clone.redPlaced);
+    setBlueNodes(clone.nodeAlternator.get(true));
+    setRedNodes(clone.nodeAlternator.get(false));
+    setBlueEdges(clone.edgeAlternator.get(true));
+    setRedEdges(clone.edgeAlternator.get(false));
+    setBluePolygons(clone.polygonAlternator.get(true));
+    setRedPolygons(clone.polygonAlternator.get(false));
+    setLegalMoves(clone.legalMoves);
   }
 
 }

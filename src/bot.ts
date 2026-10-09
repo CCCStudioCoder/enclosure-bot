@@ -1,14 +1,28 @@
-import type { Alternator, Edge, Polygon } from "./util";
+import { legalMove } from "./game";
+import type { Alternator, Edge, GameClone, Move, Polygon } from "./util";
 
-export interface GameClone {
-    turn: boolean;
-    moveRemaining: 1|2;
-    invincibleEddges: Edge[],
-    edgesThisTurn: Edge[],
-    blueScore: number;
-    redScore: number;
-    bluePlaced: number;
-    nodeAlternator: Alternator<Node>;
-    edgeAlternator: Alternator<Edge>;
-    polygonAlternator: Alternator<Polygon>;
+type TranspositionTable = [Edge[], number][];
+
+const transpositionTable: TranspositionTable = [];
+let game: GameClone;
+
+function cloneGame(): GameClone {
+    game = game!;
+    return {
+        ...game,
+        invincibleEdges: [...game.invincibleEdges],
+        edgesThisTurn: [...game.edgesThisTurn],
+        nodeAlternator: game.nodeAlternator.clone(),
+        edgeAlternator: game.edgeAlternator.clone(),
+        polygonAlternator: game.polygonAlternator.clone(),
+        legalMoves: [...game.legalMoves]
+    };
+}
+
+function chooseBestMove(game: GameClone): void {
+    //const legalMoves = game.nodeAlternator.get().map(edge => )
+}
+
+function evaluateMove(): number {
+    return 0;
 }

@@ -1,5 +1,3 @@
-import { useState } from "react";
-
 type Coords = [number, number];
 
 function fromIndex(index: number): Coords {
@@ -30,32 +28,19 @@ type Move = {
   cutEdge: number;
 }
 
-type ArrayMeta<T> = {
-  value: T[];
-  add: (value: T) => void;
-  remove: (index: number) => void;
-};
-
-function useArray<T>(elements: T[]): ArrayMeta<T> {
-  const [array, setArray] = useState<T[]>(elements);
-
-  return {
-    value: array,
-    add: (value: T) => {
-      setArray(prev => {
-        const newArray = [...prev];
-        newArray.push(value);
-        return newArray;
-      });
-    },
-    remove: (index: number) => {
-      setArray(prev => {
-        const newArray = [...prev];
-        if(index >= 0) newArray.splice(index, 1);
-        return newArray;
-      });
-    },
-  };
+export interface GameClone {
+  turn: boolean;
+  moveRemaining: number;
+  invincibleEdges: Edge[],
+  edgesThisTurn: Edge[],
+  blueScore: number;
+  redScore: number;
+  bluePlaced: number;
+  redPlaced: number;
+  nodeAlternator: Alternator<Coords[]>;
+  edgeAlternator: Alternator<Edge[]>;
+  polygonAlternator: Alternator<Polygon[]>;
+  legalMoves: Move[];
 }
 
 export class Alternator<T> {
@@ -71,6 +56,10 @@ export class Alternator<T> {
 
   get(side?: boolean): T {
     return (side != undefined ? side : this.base) ? this.a : this.b
+  }
+
+  clone(): Alternator<T> {
+    return new Alternator(this.a, this.b, this.base);
   }
 }
 
@@ -229,6 +218,6 @@ function buildMask(): Coords[] {
   return mask;
 }
 
-export { fromIndex, sameCoords, sameEdge, useArray, doesCross, areaOf, 
+export { fromIndex, sameCoords, sameEdge, doesCross, areaOf, 
   pointOnSegmentInclusive, pointOnSegmentInterior, segmentsTouch, findCyclesClosedByEdge, buildMask };
 export type { Coords, Edge, Polygon, Move };
